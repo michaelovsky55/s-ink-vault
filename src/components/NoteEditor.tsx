@@ -13,7 +13,7 @@ export function NoteEditor() {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [isRecording, setIsRecording] = useState(false);
-  const [recognition, setRecognition] = useState<any>(null);
+  const [recognition, setRecognition] = useState<SpeechRecognition | null>(null);
   
   const activeNote = getActiveNote();
   
@@ -28,12 +28,18 @@ export function NoteEditor() {
     }
   }, [activeNote]);
   
-  // Auto-save note content after a delay
+  // Enhanced auto-save functionality with debounce
   useEffect(() => {
     if (activeNoteId && (title !== activeNote?.title || content !== activeNote?.content)) {
       const timer = setTimeout(() => {
         updateNote(activeNoteId, { title, content });
-      }, 1000);
+        // Simple visual indicator that auto-save occurred
+        const saveIndicator = document.getElementById('auto-save-indicator');
+        if (saveIndicator) {
+          saveIndicator.classList.add('opacity-100');
+          setTimeout(() => saveIndicator.classList.remove('opacity-100'), 1000);
+        }
+      }, 500); // Reduced from 1000ms to 500ms for quicker syncing
       
       return () => clearTimeout(timer);
     }
@@ -42,36 +48,39 @@ export function NoteEditor() {
   // Set up speech recognition
   useEffect(() => {
     // Check if browser supports the Web Speech API
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition;
-      const recognitionInstance = new SpeechRecognition();
+    if (typeof window !== 'undefined') {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       
-      recognitionInstance.continuous = true;
-      recognitionInstance.interimResults = true;
-      recognitionInstance.lang = 'en-US';
-      
-      recognitionInstance.onresult = (event) => {
-        const transcript = Array.from(event.results)
-          .map(result => result[0])
-          .map(result => result.transcript)
-          .join(' ');
+      if (SpeechRecognition) {
+        const recognitionInstance = new SpeechRecognition();
         
-        setContent(prev => prev + ' ' + transcript);
-      };
-      
-      recognitionInstance.onerror = (event) => {
-        console.error('Speech recognition error', event.error);
-        toast.error('Speech recognition error', {
-          description: event.error,
-        });
-        setIsRecording(false);
-      };
-      
-      recognitionInstance.onend = () => {
-        setIsRecording(false);
-      };
-      
-      setRecognition(recognitionInstance);
+        recognitionInstance.continuous = true;
+        recognitionInstance.interimResults = true;
+        recognitionInstance.lang = 'en-US';
+        
+        recognitionInstance.onresult = (event: SpeechRecognitionEvent) => {
+          const transcript = Array.from(event.results)
+            .map(result => result[0])
+            .map(result => result.transcript)
+            .join(' ');
+          
+          setContent(prev => prev + ' ' + transcript);
+        };
+        
+        recognitionInstance.onerror = (event: SpeechRecognitionErrorEvent) => {
+          console.error('Speech recognition error', event.error);
+          toast.error('Speech recognition error', {
+            description: event.message || event.error,
+          });
+          setIsRecording(false);
+        };
+        
+        recognitionInstance.onend = () => {
+          setIsRecording(false);
+        };
+        
+        setRecognition(recognitionInstance);
+      }
     }
     
     return () => {
@@ -125,6 +134,9 @@ export function NoteEditor() {
           className="text-xl font-semibold bg-transparent border-none shadow-none focus-visible:ring-0 p-0 h-auto"
         />
         <div className="flex items-center gap-2">
+          <div id="auto-save-indicator" className="text-xs text-muted-foreground opacity-0 transition-opacity duration-300">
+            Auto-saved
+          </div>
           <Button
             variant={isRecording ? "destructive" : "outline"}
             size="icon"

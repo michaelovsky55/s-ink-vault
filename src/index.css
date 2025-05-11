@@ -1,4 +1,3 @@
-
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@500;600;700&display=swap');
 
 @tailwind base;
@@ -73,6 +72,17 @@
   
   .note-editor {
     @apply bg-transparent outline-none w-full h-full resize-none text-lg;
+  }
+  
+  /* Custom animations for auto-save indicator */
+  @keyframes pulse-fade {
+    0% { opacity: 0; }
+    50% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+  
+  #auto-save-indicator.opacity-100 {
+    animation: pulse-fade 1s ease-in-out;
   }
   
   /* Custom scrollbar for the application */
