@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -14,6 +14,7 @@ export function NoteEditor() {
   const [content, setContent] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [recognition, setRecognition] = useState<SpeechRecognition | null>(null);
+  const [interimTranscript, setInterimTranscript] = useState('');
   
   const activeNote = getActiveNote();
   
@@ -39,15 +40,14 @@ export function NoteEditor() {
           saveIndicator.classList.add('opacity-100');
           setTimeout(() => saveIndicator.classList.remove('opacity-100'), 1000);
         }
-      }, 500); // Reduced from 1000ms to 500ms for quicker syncing
+      }, 300); // Decreased from 500ms to 300ms for quicker syncing
       
       return () => clearTimeout(timer);
     }
   }, [title, content, activeNoteId, activeNote, updateNote]);
   
-  // Set up speech recognition
-  useEffect(() => {
-    // Check if browser supports the Web Speech API
+  // Improved speech recognition setup
+  const setupSpeechRecognition = useCallback(() => {
     if (typeof window !== 'undefined') {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       
@@ -56,15 +56,32 @@ export function NoteEditor() {
         
         recognitionInstance.continuous = true;
         recognitionInstance.interimResults = true;
-        recognitionInstance.lang = 'en-US';
+        recognitionInstance.lang = navigator.language || 'en-US'; // Use browser language
+        recognitionInstance.maxAlternatives = 3; // Get multiple alternatives for better accuracy
         
         recognitionInstance.onresult = (event: SpeechRecognitionEvent) => {
-          const transcript = Array.from(event.results)
-            .map(result => result[0])
-            .map(result => result.transcript)
-            .join(' ');
+          let finalTranscript = '';
+          let currentInterimTranscript = '';
           
-          setContent(prev => prev + ' ' + transcript);
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+            
+            if (event.results[i].isFinal) {
+              finalTranscript += transcript + ' ';
+              
+              // Apply smart punctuation to final transcript
+              const smartTranscript = applySmartPunctuation(finalTranscript);
+              setContent(prev => {
+                // Only add space if content doesn't end with one
+                const spacer = prev.endsWith(' ') ? '' : ' ';
+                return prev + spacer + smartTranscript;
+              });
+            } else {
+              currentInterimTranscript += transcript;
+            }
+          }
+          
+          setInterimTranscript(currentInterimTranscript);
         };
         
         recognitionInstance.onerror = (event: SpeechRecognitionErrorEvent) => {
@@ -77,11 +94,39 @@ export function NoteEditor() {
         
         recognitionInstance.onend = () => {
           setIsRecording(false);
+          setInterimTranscript('');
         };
         
         setRecognition(recognitionInstance);
       }
     }
+  }, []);
+  
+  // Apply smart punctuation to improve transcription quality
+  const applySmartPunctuation = (text: string) => {
+    if (!text) return '';
+    
+    // Capitalize first letter of sentences
+    let processed = text.replace(/(^\s*\w|[.!?]\s*\w)/g, match => match.toUpperCase());
+    
+    // Add periods at the end of sentences if missing
+    if (!processed.match(/[.!?]$/)) {
+      processed = processed.trim() + '.';
+    }
+    
+    // Fix common speech recognition errors
+    processed = processed
+      .replace(/\bi\b/g, 'I') // Capitalize "I"
+      .replace(/\s{2,}/g, ' ') // Remove extra spaces
+      .replace(/\s([,.!?:;])/g, '$1') // Remove spaces before punctuation
+      .replace(/(\d+)(st|nd|rd|th)\b/g, '$1$2'); // Fix ordinals
+      
+    return processed;
+  };
+  
+  // Set up speech recognition
+  useEffect(() => {
+    setupSpeechRecognition();
     
     return () => {
       if (recognition) {
@@ -92,10 +137,11 @@ export function NoteEditor() {
         }
       }
     };
-  }, []);
+  }, [setupSpeechRecognition]);
   
   const toggleSpeechRecognition = () => {
     if (!recognition) {
+      setupSpeechRecognition();
       toast.error('Speech recognition not supported by your browser');
       return;
     }
@@ -103,6 +149,7 @@ export function NoteEditor() {
     if (isRecording) {
       recognition.stop();
       setIsRecording(false);
+      setInterimTranscript('');
       toast.success('Voice recording stopped');
     } else {
       recognition.start();
@@ -173,6 +220,12 @@ export function NoteEditor() {
             placeholder="Start typing your note content here..."
             className="w-full h-full resize-none bg-transparent border-none shadow-none focus-visible:ring-0 p-0 text-lg"
           />
+          
+          {isRecording && interimTranscript && (
+            <div className="absolute bottom-4 left-4 right-4 bg-background/80 backdrop-blur-sm p-3 rounded-md border border-primary/30">
+              <p className="text-sm italic text-primary">{interimTranscript}</p>
+            </div>
+          )}
         </Card>
       </div>
     </div>

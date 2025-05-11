@@ -52,6 +52,7 @@ export function NotebookProvider({ children }: { children: React.ReactNode }) {
   const [activeTabId, setActiveTabId] = useState<string>('');
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
   const [lastSyncTime, setLastSyncTime] = useState<number>(0);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   
   // Initialize with a default tab if none exists and load data
   useEffect(() => {
@@ -100,16 +101,19 @@ export function NotebookProvider({ children }: { children: React.ReactNode }) {
           description: `${noteCount} notes in ${tabCount} tabs`,
           duration: 2000,
         });
+        
+        setIsInitialLoad(false);
       } catch (error) {
         console.error('Error loading notebook data:', error);
         toast.error('Failed to load your notes');
+        setIsInitialLoad(false);
       }
     };
     
     loadData();
     
-    // Set up periodic check for updates from other browser instances
-    const syncInterval = setInterval(checkForExternalChanges, 5000);
+    // Set up more frequent check for updates from other browser instances
+    const syncInterval = setInterval(checkForExternalChanges, 3000); // Changed from 5000ms to 3000ms
     
     // Set up storage event listener to detect changes from other tabs/windows
     window.addEventListener('storage', handleStorageChange);
@@ -146,6 +150,15 @@ export function NotebookProvider({ children }: { children: React.ReactNode }) {
         if (activeNoteId) {
           const parsedNotes = savedNotes ? JSON.parse(savedNotes) as Note[] : [];
           const activeNote = parsedNotes.find(note => note.id === activeNoteId);
+          
+          // If the active note has been updated externally, inform the user
+          if (activeNote && getActiveNote() && 
+              activeNote.updatedAt > getActiveNote()!.updatedAt) {
+            toast.info('Note updated externally', {
+              description: 'This note was updated from another device',
+              duration: 3000,
+            });
+          }
         }
         
         toast.info('Notes synchronized', {
@@ -174,6 +187,9 @@ export function NotebookProvider({ children }: { children: React.ReactNode }) {
   
   // Save to localStorage whenever data changes
   useEffect(() => {
+    // Skip during initial load to prevent duplicate saves
+    if (isInitialLoad) return;
+    
     if (tabs.length > 0) {
       localStorage.setItem(STORAGE_KEYS.TABS, JSON.stringify(tabs));
     }
@@ -193,7 +209,7 @@ export function NotebookProvider({ children }: { children: React.ReactNode }) {
     const currentTime = Date.now();
     localStorage.setItem(STORAGE_KEYS.LAST_SYNC, currentTime.toString());
     setLastSyncTime(currentTime);
-  }, [tabs, notes, activeTabId, activeNoteId]);
+  }, [tabs, notes, activeTabId, activeNoteId, isInitialLoad]);
   
   // Tab operations
   const createTab = (name: string) => {
